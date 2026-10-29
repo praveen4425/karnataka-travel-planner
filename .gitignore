@@ -5,13 +5,16 @@ __v0_jsx-dev-runtime.ts
 .snowflake/
 .design-cache/
 .v0-trash/
+.vercel
 .vercel/
 
 # Environment variables
+.env
 .env.local
 .env*.local
 
 # Common ignores
 node_modules
+.next
 .next/
 .DS_Store
