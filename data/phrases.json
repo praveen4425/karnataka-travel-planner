@@ -1,0 +1,18 @@
+[
+{"id":"hello","tag":"greeting","kn":"ನಮಸ್ಕಾರ","translit":"Namaskara","en":"Hello","hi":"नमस्ते"},
+{"id":"thanks","tag":"courtesy","kn":"ಧನ್ಯವಾದ","translit":"Dhanyavaada","en":"Thank you","hi":"धन्यवाद"},
+{"id":"please","tag":"courtesy","kn":"ದಯವಿಟ್ಟು","translit":"Dayavittu","en":"Please","hi":"कृपया"},
+{"id":"sorry","tag":"courtesy","kn":"ಕ್ಷಮಿಸಿ","translit":"Kshamisi","en":"Sorry / excuse me","hi":"माफ़ कीजिए"},
+{"id":"howare","tag":"greeting","kn":"ಹೇಗಿದ್ದೀರಾ?","translit":"Hegiddira?","en":"How are you?","hi":"आप कैसे हैं?"},
+{"id":"fine","tag":"greeting","kn":"ಚೆನ್ನಾಗಿದ್ದೇನೆ","translit":"Chennagiddene","en":"I am fine","hi":"मैं ठीक हूँ"},
+{"id":"price","tag":"shopping","kn":"ಇದರ ಬೆಲೆ ಎಷ್ಟು?","translit":"Idara bele eshtu?","en":"What is the price of this?","hi":"इसकी कीमत कितनी है?"},
+{"id":"costly","tag":"shopping","kn":"ತುಂಬಾ ದುಬಾರಿ","translit":"Tumba dubaari","en":"Too expensive","hi":"बहुत महंगा"},
+{"id":"reduce","tag":"shopping","kn":"ದರ ಕಡಿಮೆ ಮಾಡಿ","translit":"Dara kadime maadi","en":"Reduce the price","hi":"दाम कम कीजिए"},
+{"id":"straight","tag":"direction","kn":"ನೇರ ಹೋಗಿ","translit":"Nera hogi","en":"Go straight","hi":"सीधे जाइए"},
+{"id":"left","tag":"direction","kn":"ಎಡಕ್ಕೆ ತಿರುಗಿ","translit":"Edakke tirugi","en":"Turn left","hi":"बाएँ मुड़िए"},
+{"id":"right","tag":"direction","kn":"ಬಲಕ್ಕೆ ತಿರುಗಿ","translit":"Balakke tirugi","en":"Turn right","hi":"दाएँ मुड़िए"},
+{"id":"stop","tag":"direction","kn":"ಇಲ್ಲಿ ನಿಲ್ಲಿಸಿ","translit":"Illi nillisi","en":"Stop here","hi":"यहाँ रोकिए"},
+{"id":"food","tag":"food","kn":"ಊಟ ಎಲ್ಲಿ ಸಿಗುತ್ತದೆ?","translit":"Oota elli siguttade?","en":"Where can I get food?","hi":"खाना कहाँ मिलेगा?"},
+{"id":"water","tag":"food","kn":"ನೀರು ಬೇಕು","translit":"Neeru beku","en":"I need water","hi":"मुझे पानी चाहिए"},
+{"id":"help","tag":"emergency","kn":"ಸಹಾಯ!","translit":"Sahaaya!","en":"Help!","hi":"मदद!"}
+]
