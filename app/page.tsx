@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import {
   ArrowRight,
+  ArrowUp,
   CalendarDays,
   Check,
   ChevronDown,
@@ -20,8 +21,16 @@ import {
   Utensils,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { generateItinerary, type GroupType, type Itinerary, type ItineraryInput } from '@/lib/generateItinerary'
+import {
+  generateItinerary,
+  getDestinationOptions,
+  type GroupType,
+  type Itinerary,
+  type ItineraryInput,
+} from '@/lib/generateItinerary'
 import { translations, type Language, type Translation } from '@/lib/translations'
+import { DestinationCards } from '@/components/destination-cards'
+import type { DestinationCard } from '@/lib/clusters'
 
 const interestKeys = ['Heritage', 'Nature', 'Wildlife', 'Beaches', 'Food', 'Adventure', 'Spiritual'] as const
 const experienceKeys = ['Relaxed', 'Adventure', 'Cultural', 'Family', 'Solo Budget'] as const
@@ -43,9 +52,18 @@ const formatINR = (value: number) => new Intl.NumberFormat('en-IN').format(value
 export default function Page() {
   const [language, setLanguage] = useState<Language>('en')
   const [input, setInput] = useState<ItineraryInput>(initialInput)
+  const [cards, setCards] = useState<DestinationCard[]>([])
+  const [noExactMatch, setNoExactMatch] = useState(false)
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
+  const [optionsLoading, setOptionsLoading] = useState(false)
+  const [optionsError, setOptionsError] = useState('')
+  const [planLoading, setPlanLoading] = useState(false)
+  const [planError, setPlanError] = useState('')
   const [itinerary, setItinerary] = useState<Itinerary | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+
+  const cardsRef = useRef<HTMLDivElement>(null)
+  const planRequestIdRef = useRef(0)
+
   const copy: Translation = translations[language]
 
   const daysInvalid = input.days < 1 || input.days > 7
@@ -55,6 +73,32 @@ export default function Page() {
   const changeLanguage = (nextLanguage: Language) => {
     setLanguage(nextLanguage)
     setInput((current) => ({ ...current, language: nextLanguage }))
+
+    if (itinerary && selectedCardId) {
+      const reqId = ++planRequestIdRef.current
+      setPlanLoading(true)
+      setPlanError('')
+      generateItinerary({
+        ...input,
+        destination: selectedCardId,
+        language: nextLanguage,
+      })
+        .then((result) => {
+          if (reqId === planRequestIdRef.current) {
+            setItinerary(result)
+          }
+        })
+        .catch(() => {
+          if (reqId === planRequestIdRef.current) {
+            setPlanError(translations[nextLanguage].error)
+          }
+        })
+        .finally(() => {
+          if (reqId === planRequestIdRef.current) {
+            setPlanLoading(false)
+          }
+        })
+    }
   }
 
   const toggleInterest = (interest: string) => {
@@ -66,18 +110,60 @@ export default function Page() {
     }))
   }
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (daysInvalid || travellersInvalid || cityInvalid) return
-    setLoading(true)
-    setError('')
+  const fetchDestinationOptions = async () => {
+    if (daysInvalid || travellersInvalid || cityInvalid || optionsLoading) return
+    setOptionsLoading(true)
+    setOptionsError('')
+    setCards([])
+    setSelectedCardId(null)
+    setItinerary(null)
+    setPlanError('')
     try {
-      await new Promise((resolve) => setTimeout(resolve, 700))
-      setItinerary(await generateItinerary({ ...input, language }))
+      const result = await getDestinationOptions({
+        interests: input.interests,
+        days: input.days,
+        experience: input.experience,
+      })
+      setCards(result.cards)
+      setNoExactMatch(result.noExactMatch)
+      setTimeout(() => {
+        cardsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 100)
     } catch {
-      setError(copy.error)
+      setOptionsError(copy.error)
     } finally {
-      setLoading(false)
+      setOptionsLoading(false)
+    }
+  }
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    fetchDestinationOptions()
+  }
+
+  const handleCardSelect = async (cardId: string) => {
+    if (planLoading) return
+    const reqId = ++planRequestIdRef.current
+    setSelectedCardId(cardId)
+    setPlanLoading(true)
+    setPlanError('')
+    try {
+      const result = await generateItinerary({
+        ...input,
+        destination: cardId,
+        language,
+      })
+      if (reqId === planRequestIdRef.current) {
+        setItinerary(result)
+      }
+    } catch {
+      if (reqId === planRequestIdRef.current) {
+        setPlanError(copy.error)
+      }
+    } finally {
+      if (reqId === planRequestIdRef.current) {
+        setPlanLoading(false)
+      }
     }
   }
 
@@ -278,19 +364,28 @@ export default function Page() {
               </label>
             </div>
 
-            {error && (
-              <div role="alert" className="mt-5 flex items-start gap-2 rounded-xl bg-[#fbe7e1] p-3 text-sm text-[#9b3327]">
-                <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                {error}
+            {optionsError && (
+              <div role="alert" className="mt-5 flex items-start justify-between gap-2 rounded-xl bg-[#fbe7e1] p-3 text-sm text-[#9b3327]">
+                <div className="flex items-start gap-2">
+                  <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                  <span>{optionsError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchDestinationOptions}
+                  className="ml-2 font-bold underline hover:no-underline text-xs shrink-0"
+                >
+                  {copy.tryAgainButton}
+                </button>
               </div>
             )}
 
             <Button
               type="submit"
-              disabled={loading || daysInvalid || travellersInvalid || cityInvalid}
+              disabled={optionsLoading || daysInvalid || travellersInvalid || cityInvalid}
               className="mt-7 h-12 w-full rounded-xl bg-[#6f1d2b] text-base font-bold text-white hover:bg-[#581522]"
             >
-              {loading ? (
+              {optionsLoading ? (
                 <>
                   <LoaderCircle className="animate-spin" data-icon="inline-start" /> {copy.loadingButton}
                 </>
@@ -302,15 +397,66 @@ export default function Page() {
             </Button>
           </form>
 
-          <section aria-live="polite" aria-busy={loading}>
-            {loading ? (
+          <section aria-live="polite" aria-busy={optionsLoading || planLoading}>
+            {optionsLoading ? (
               <div className="flex min-h-[420px] flex-col items-center justify-center rounded-3xl border border-[#eadfce] bg-[#fffdf9] p-8 text-center">
                 <LoaderCircle className="size-8 animate-spin text-[#6f1d2b]" aria-hidden="true" />
                 <h2 className="mt-4 font-serif text-2xl font-bold text-[#5d1726]">{copy.loadingTitle}</h2>
-                <p className="mt-2 text-sm text-[#8b8179]">{copy.loadingText}</p>
+                <p className="mt-2 text-sm text-[#8b8179]">{copy.loadingOptionsText}</p>
               </div>
-            ) : itinerary ? (
-              <ItineraryView itinerary={itinerary} copy={copy} travellers={input.travellers} />
+            ) : cards.length > 0 ? (
+              <div ref={cardsRef} className="space-y-8">
+                <DestinationCards
+                  cards={cards}
+                  selectedId={selectedCardId}
+                  noExactMatch={noExactMatch}
+                  onSelect={handleCardSelect}
+                  copy={copy}
+                  isPlanLoading={planLoading}
+                />
+
+                {planLoading && (
+                  <div className="flex min-h-[300px] flex-col items-center justify-center rounded-3xl border border-[#eadfce] bg-[#fffdf9] p-8 text-center">
+                    <LoaderCircle className="size-8 animate-spin text-[#6f1d2b]" aria-hidden="true" />
+                    <h2 className="mt-4 font-serif text-2xl font-bold text-[#5d1726]">{copy.loadingTitle}</h2>
+                    <p className="mt-2 text-sm text-[#8b8179]">{copy.loadingText}</p>
+                  </div>
+                )}
+
+                {planError && (
+                  <div role="alert" className="flex items-start justify-between gap-2 rounded-2xl bg-[#fbe7e1] p-4 text-sm text-[#9b3327]">
+                    <div className="flex items-start gap-2">
+                      <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                      <span>{planError}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => selectedCardId && handleCardSelect(selectedCardId)}
+                      className="ml-2 font-bold underline hover:no-underline text-xs shrink-0"
+                    >
+                      {copy.tryAgainButton}
+                    </button>
+                  </div>
+                )}
+
+                {itinerary && !planLoading && (
+                  <div>
+                    <div className="mb-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          cardsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-[#dfd2c1] bg-[#fffdf9] px-3.5 py-1.5 text-xs font-semibold text-[#6f1d2b] shadow-sm transition hover:bg-[#fbf7f0]"
+                      >
+                        <ArrowUp className="size-3.5" aria-hidden="true" />
+                        {copy.backToOptionsButton}
+                      </button>
+                    </div>
+                    <ItineraryView itinerary={itinerary} copy={copy} travellers={input.travellers} />
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="flex min-h-[420px] flex-col items-center justify-center rounded-3xl border border-dashed border-[#d9c9b6] bg-[#f8f1e5] p-8 text-center">
                 <div className="flex size-14 items-center justify-center rounded-full bg-[#f3dfb0] text-[#9b6c18]">

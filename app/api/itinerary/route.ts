@@ -3,21 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import destinations from '@/data/destinations.json'
 import phrases from '@/data/phrases.json'
 import type { Itinerary } from '@/lib/generateItinerary'
+import { CLUSTERS, type Cluster } from '@/lib/clusters'
 
 export const maxDuration = 60
-
-const CLUSTERS = [
-  ['mysuru'],
-  ['bengaluru'],
-  ['hampi'],
-  ['coorg'],
-  ['gokarna'],
-  ['badami', 'pattadakal', 'aihole'],
-  ['belur-halebidu', 'shravanabelagola', 'chikkamagaluru'],
-  ['jog-falls'],
-  ['udupi'],
-  ['murudeshwara'],
-]
 
 interface PhraseItem {
   id: string
@@ -273,7 +261,8 @@ async function callGemini(
   budget: number,
   language: string,
   groupType: string,
-  startingCity: string
+  startingCity: string,
+  fixedClusterName?: string
 ): Promise<AttemptResult> {
   const callStart = Date.now()
   const controller = new AbortController()
@@ -433,7 +422,9 @@ async function callGemini(
     if (!parsed || typeof parsed !== 'object') {
       throw new Error('Validation failed: parsed response is not an object')
     }
-    if (typeof parsed.destination !== 'string' || !parsed.destination.trim()) {
+    if (fixedClusterName) {
+      parsed.destination = fixedClusterName
+    } else if (typeof parsed.destination !== 'string' || !parsed.destination.trim()) {
       throw new Error('Validation failed: missing or invalid destination field')
     }
     if (typeof parsed.summary !== 'string') {
@@ -714,7 +705,28 @@ export async function POST(req: NextRequest) {
     startingCity,
     travellers,
     groupType,
+    destination,
   } = body as Record<string, unknown>
+
+  let fixedCluster: Cluster | undefined
+  if (destination !== undefined) {
+    if (typeof destination !== 'string' || !destination.trim()) {
+      console.error('[Itinerary API Error] Status: 400 | Error: Invalid destination: Must be a non-empty string.')
+      return NextResponse.json(
+        { error: 'Invalid destination: Must be a valid cluster id.' },
+        { status: 400 }
+      )
+    }
+    const matched = CLUSTERS.find((c) => c.id === destination.trim().toLowerCase())
+    if (!matched) {
+      console.error(`[Itinerary API Error] Status: 400 | Error: Destination cluster "${destination}" not found.`)
+      return NextResponse.json(
+        { error: `Invalid destination: Cluster "${destination}" not found.` },
+        { status: 400 }
+      )
+    }
+    fixedCluster = matched
+  }
 
   if (typeof startingCity !== 'string' || !startingCity.trim()) {
     console.error('[Itinerary API Error] Status: 400 | Error: Invalid startingCity: Must be a non-empty string.')
@@ -798,10 +810,24 @@ export async function POST(req: NextRequest) {
       ? Math.ceil(numTravellers / 3)
       : Math.ceil(numTravellers / 2)
 
+  const destinationData = fixedCluster
+    ? (destinations as Array<{ id: string }>).filter((d) => fixedCluster.members.includes(d.id))
+    : destinations
+
+  const clusterSection = fixedCluster
+    ? `GEOGRAPHIC CLUSTER (FIXED):
+The cluster is fixed: ${fixedCluster.name}. Use only these destinations: ${fixedCluster.members.join(', ')}`
+    : `GEOGRAPHIC CLUSTERS (Choose exactly ONE cluster):
+${JSON.stringify(CLUSTERS)}`
+
+  const clusterSelectionRule = fixedCluster
+    ? `1. CLUSTER SELECTION: The cluster is fixed: ${fixedCluster.name}. Use only these destinations: ${fixedCluster.members.join(', ')}. Use ONLY destinations in this cluster for the entire trip. NEVER mix destinations from outside this cluster.`
+    : `1. CLUSTER SELECTION: Choose exactly ONE cluster from CLUSTERS that best matches the starting city "${normalizedStartingCity}", interests, experience style, group type, and destination bestTime. Use ONLY destinations in that chosen cluster for the entire trip. NEVER mix destinations across different clusters. (Ignore any cluster id that does not exist in the destination database).`
+
   const prompt = `You are an expert travel planner for Karnataka, India.
 Create a thoughtful day-wise full-trip itinerary covering round-trip travel from home city, stay, local transport, food, and sightseeing:
 - Starting City: ${normalizedStartingCity}
-- Number of Travellers: ${travellers}
+${fixedCluster ? `- Fixed Cluster: ${fixedCluster.name} (The cluster is fixed: ${fixedCluster.name}. Use only these destinations: ${fixedCluster.members.join(', ')})\n` : ''}- Number of Travellers: ${travellers}
 - Group Type: ${groupType} (Style requirement: ${
     groupType === 'family'
       ? 'family = relaxed pace, comfortable stays, family-friendly destinations, absolutely no strenuous treks or dangerous climbs'
@@ -817,17 +843,16 @@ Create a thoughtful day-wise full-trip itinerary covering round-trip travel from
 - Experience Style: ${typeof experience === 'string' ? experience : 'Cultural'}
 - Requested Output Language: ${languageName} (${language})
 
-GEOGRAPHIC CLUSTERS (Choose exactly ONE cluster):
-${JSON.stringify(CLUSTERS)}
+${clusterSection}
 
 DESTINATION DATABASE (Only use destinations and attractions from this list):
-${JSON.stringify(destinations, null, 2)}
+${JSON.stringify(destinationData, null, 2)}
 
 VERIFIED KANNADA PHRASES CATALOG:
 ${phrasesForPrompt}
 
 STRICT RULES:
-1. CLUSTER SELECTION: Choose exactly ONE cluster from CLUSTERS that best matches the starting city "${normalizedStartingCity}", interests, experience style, group type, and destination bestTime. Use ONLY destinations in that chosen cluster for the entire trip. NEVER mix destinations across different clusters. (Ignore any cluster id that does not exist in the destination database).
+${clusterSelectionRule}
 
 2. BUDGET FITTING (PLAN BACKWARDS) & REALISTIC PRICING:
    - Plan backwards from the budget: First pick the travel option, then work out what is left for stay + food + local transport + entry fees.
@@ -929,8 +954,11 @@ STRICT RULES:
   // 1. Initial attempt with primary model (28s timeout, capped by remaining budget)
   const remaining1 = maxTotalMs - (Date.now() - startTime)
   const timeout1 = Math.min(28000, Math.max(1000, remaining1))
-  const result1 = await callGemini(ai, primaryModel, prompt, timeout1, travellers, days, budget, language, groupType, normalizedStartingCity)
+  const result1 = await callGemini(ai, primaryModel, prompt, timeout1, travellers, days, budget, language, groupType, normalizedStartingCity, fixedCluster?.name)
   if (result1.success && result1.data) {
+    if (fixedCluster) {
+      result1.data.destination = fixedCluster.name
+    }
     return NextResponse.json(result1.data)
   }
   logFailure(1, primaryModel, result1)
@@ -945,8 +973,11 @@ STRICT RULES:
       await new Promise((resolve) => setTimeout(resolve, 1000))
       const remaining2 = maxTotalMs - (Date.now() - startTime)
       const timeout2 = Math.min(28000, Math.max(1000, remaining2))
-      const result2 = await callGemini(ai, primaryModel, prompt, timeout2, travellers, days, budget, language, groupType, normalizedStartingCity)
+      const result2 = await callGemini(ai, primaryModel, prompt, timeout2, travellers, days, budget, language, groupType, normalizedStartingCity, fixedCluster?.name)
       if (result2.success && result2.data) {
+        if (fixedCluster) {
+          result2.data.destination = fixedCluster.name
+        }
         return NextResponse.json(result2.data)
       }
       logFailure(2, primaryModel, result2)
@@ -962,8 +993,11 @@ STRICT RULES:
     if (timeRemainingForFallback >= 1000) {
       const timeout3 = Math.min(28000, Math.max(1000, timeRemainingForFallback))
       const attemptNum = retriedPrimary ? 3 : 2
-      const result3 = await callGemini(ai, fallbackModel, prompt, timeout3, travellers, days, budget, language, groupType, normalizedStartingCity)
+      const result3 = await callGemini(ai, fallbackModel, prompt, timeout3, travellers, days, budget, language, groupType, normalizedStartingCity, fixedCluster?.name)
       if (result3.success && result3.data) {
+        if (fixedCluster) {
+          result3.data.destination = fixedCluster.name
+        }
         return NextResponse.json(result3.data)
       }
       logFailure(attemptNum, fallbackModel, result3)

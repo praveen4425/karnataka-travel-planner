@@ -1,3 +1,5 @@
+import type { DestinationCard } from '@/lib/clusters'
+
 export type GroupType = 'solo' | 'couple' | 'family' | 'friends'
 
 export type ItineraryInput = {
@@ -9,6 +11,7 @@ export type ItineraryInput = {
   startingCity: string
   travellers: number
   groupType: GroupType
+  destination?: string
 }
 
 export type ItineraryStop = {
@@ -112,6 +115,27 @@ export async function generateItinerary(input: ItineraryInput): Promise<Itinerar
   if (!response.ok) {
     const errorData = await response.json().catch(() => null)
     throw new Error(errorData?.error || 'Failed to generate itinerary')
+  }
+
+  return response.json()
+}
+
+export async function getDestinationOptions(input: {
+  interests: string[]
+  days: number
+  experience: string
+}): Promise<{ cards: DestinationCard[]; noExactMatch: boolean }> {
+  const response = await fetch('/api/destinations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null)
+    throw new Error(errorData?.error || 'Failed to fetch destination options')
   }
 
   return response.json()
