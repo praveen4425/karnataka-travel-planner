@@ -29,7 +29,7 @@ export function DestinationCards({
   copy,
   isPlanLoading,
 }: DestinationCardsProps) {
-  if (!cards || cards.length === 0) return null
+  if (!Array.isArray(cards) || cards.length === 0) return null
 
   return (
     <section aria-labelledby="cards-heading" className="w-full">
@@ -60,9 +60,11 @@ export function DestinationCards({
                 }`
               : `${card.suggestedDaysMin}-${card.suggestedDaysMax} ${copy.days}`
 
-          const localizedInterests = card.matchedInterests
-            .map((item) => copy.interests[item as keyof typeof copy.interests] || item)
-            .join(', ')
+          const localizedInterests = Array.isArray(card.matchedInterests)
+            ? card.matchedInterests
+                .map((item) => copy.interests[item as keyof typeof copy.interests] || item)
+                .join(', ')
+            : ''
 
           return (
             <button
@@ -75,7 +77,7 @@ export function DestinationCards({
               aria-pressed={isSelected}
               disabled={isDisabled}
               aria-disabled={isDisabled}
-              className={`group flex flex-col justify-between rounded-2xl border p-5 text-left transition-all ${
+              className={`group flex flex-col justify-between rounded-2xl border p-5 text-left transition-all min-w-0 ${
                 isSelected
                   ? 'border-[#6f1d2b] bg-[#fffaf5] ring-2 ring-[#6f1d2b] shadow-md'
                   : isDisabled
@@ -83,10 +85,10 @@ export function DestinationCards({
                   : 'border-[#e7d9c8] bg-[#fffdf9] hover:border-[#b4771d] hover:shadow-sm'
               }`}
             >
-              <div className="w-full">
+              <div className="w-full min-w-0">
                 {/* Header: Name and optional Top pick badge */}
                 <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-serif text-lg font-bold text-[#5d1726] group-hover:text-[#6f1d2b]">
+                  <h3 className="font-serif text-lg font-bold text-[#5d1726] group-hover:text-[#6f1d2b] break-words min-w-0">
                     {card.name}
                   </h3>
                   {index === 0 && (
@@ -98,14 +100,14 @@ export function DestinationCards({
                 </div>
 
                 {/* Duration & Best Time */}
-                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#71675f]">
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#71675f] break-words">
                   <span className="inline-flex items-center gap-1.5 font-medium text-[#443b35]">
                     <CalendarDays className="size-3.5 text-[#9b6c18]" aria-hidden="true" />
                     {daysText}
                   </span>
                   {card.bestTime && (
-                    <span className="inline-flex items-center gap-1.5">
-                      <Clock className="size-3.5 text-[#9d9289]" aria-hidden="true" />
+                    <span className="inline-flex items-center gap-1.5 break-words">
+                      <Clock className="size-3.5 text-[#9d9289] shrink-0" aria-hidden="true" />
                       <span>
                         {copy.bestTimeLabel}: {card.bestTime}
                       </span>
@@ -114,16 +116,16 @@ export function DestinationCards({
                 </div>
 
                 {/* Highlights */}
-                {card.highlights && card.highlights.length > 0 && (
-                  <div className="mt-3">
+                {Array.isArray(card.highlights) && card.highlights.length > 0 && (
+                  <div className="mt-3 min-w-0">
                     <p className="text-xs font-bold uppercase tracking-wider text-[#8b8179]">
                       {copy.highlightsLabel}
                     </p>
                     <ul className="mt-1 space-y-0.5 text-xs text-[#4e453e]">
                       {card.highlights.map((h) => (
-                        <li key={h} className="flex items-start gap-1.5">
+                        <li key={h} className="flex items-start gap-1.5 min-w-0">
                           <MapPin className="mt-0.5 size-3 shrink-0 text-[#b4771d]" aria-hidden="true" />
-                          <span className="line-clamp-1">{h}</span>
+                          <span className="break-words line-clamp-1">{h}</span>
                         </li>
                       ))}
                     </ul>
@@ -132,23 +134,23 @@ export function DestinationCards({
 
                 {/* Food recommendation */}
                 {card.food && (
-                  <div className="mt-3 text-xs text-[#61564e]">
+                  <div className="mt-3 text-xs text-[#61564e] min-w-0 break-words">
                     <span className="font-bold text-[#443b35]">
                       <Utensils className="mr-1 inline size-3 text-[#9b6c18]" aria-hidden="true" />
                       {copy.tryFoodLabel}:{' '}
                     </span>
-                    <span className="line-clamp-1">{card.food}</span>
+                    <span className="line-clamp-1 break-words">{card.food}</span>
                   </div>
                 )}
 
                 {/* Matched Interests */}
-                {card.matchedInterests && card.matchedInterests.length > 0 && (
-                  <div className="mt-2 text-xs text-[#3d6846]">
+                {Array.isArray(card.matchedInterests) && card.matchedInterests.length > 0 && (
+                  <div className="mt-2 text-xs text-[#3d6846] min-w-0 break-words">
                     <span className="font-medium">
                       <Sparkles className="mr-1 inline size-3 text-[#3d6846]" aria-hidden="true" />
                       {copy.matchesInterestLabel}:{' '}
                     </span>
-                    <span className="font-semibold">{localizedInterests}</span>
+                    <span className="font-semibold break-words">{localizedInterests}</span>
                   </div>
                 )}
               </div>

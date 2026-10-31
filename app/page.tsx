@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   ArrowRight,
   ArrowUp,
@@ -36,6 +36,8 @@ const interestKeys = ['Heritage', 'Nature', 'Wildlife', 'Beaches', 'Food', 'Adve
 const experienceKeys = ['Relaxed', 'Adventure', 'Cultural', 'Family', 'Solo Budget'] as const
 const groupTypeKeys: GroupType[] = ['solo', 'couple', 'family', 'friends']
 
+const STARTING_CITY_REGEX = /^[\p{L}\p{M} .'-]{2,40}$/u
+
 const initialInput: ItineraryInput = {
   interests: ['Heritage', 'Food'],
   days: 2,
@@ -66,9 +68,17 @@ export default function Page() {
 
   const copy: Translation = translations[language]
 
-  const daysInvalid = input.days < 1 || input.days > 7
-  const travellersInvalid = input.travellers < 1 || input.travellers > 10
-  const cityInvalid = !input.startingCity.trim()
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = language
+    }
+  }, [language])
+
+  const daysInvalid = typeof input.days !== 'number' || !Number.isInteger(input.days) || input.days < 1 || input.days > 7
+  const travellersInvalid = typeof input.travellers !== 'number' || !Number.isInteger(input.travellers) || input.travellers < 1 || input.travellers > 10
+  const cityInvalid = typeof input.startingCity !== 'string' || !STARTING_CITY_REGEX.test(input.startingCity.trim())
+  const budgetInvalid = typeof input.budget !== 'number' || !Number.isFinite(input.budget) || input.budget <= 0 || input.budget > 10000000
+  const isFormInvalid = daysInvalid || travellersInvalid || cityInvalid || budgetInvalid
 
   const changeLanguage = (nextLanguage: Language) => {
     setLanguage(nextLanguage)
@@ -111,7 +121,7 @@ export default function Page() {
   }
 
   const fetchDestinationOptions = async () => {
-    if (daysInvalid || travellersInvalid || cityInvalid || optionsLoading) return
+    if (isFormInvalid || optionsLoading) return
     setOptionsLoading(true)
     setOptionsError('')
     setCards([])
@@ -337,12 +347,19 @@ export default function Page() {
                   <IndianRupee className="absolute left-3 top-3 size-4 text-[#9d9289]" aria-hidden="true" />
                   <input
                     type="number"
-                    min="0"
+                    min="1"
+                    max="10000000"
                     value={input.budget}
                     onChange={(event) => setInput({ ...input, budget: Number(event.target.value) })}
+                    aria-invalid={budgetInvalid}
                     className="h-11 w-full rounded-xl border border-[#dfd2c1] bg-[#fffdf9] pl-9 pr-3 font-normal text-[#302b2a] outline-none ring-[#b4771d] focus:ring-2"
                   />
                 </div>
+                {budgetInvalid && (
+                  <span className="text-xs font-normal text-[#9b3327]" role="alert">
+                    {copy.validationBudget}
+                  </span>
+                )}
               </label>
 
               <label className="grid gap-2 text-sm font-bold text-[#443b35]">
@@ -382,7 +399,7 @@ export default function Page() {
 
             <Button
               type="submit"
-              disabled={optionsLoading || daysInvalid || travellersInvalid || cityInvalid}
+              disabled={optionsLoading || isFormInvalid}
               className="mt-7 h-12 w-full rounded-xl bg-[#6f1d2b] text-base font-bold text-white hover:bg-[#581522]"
             >
               {optionsLoading ? (
@@ -518,14 +535,14 @@ function ItineraryView({
   return (
     <div>
       {/* Destination Heading & whyThisPlan */}
-      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between min-w-0">
+        <div className="min-w-0 break-words">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#3d6846]">{copy.suggestedEscape}</p>
-          <h2 className="mt-1 font-serif text-3xl font-bold text-[#5d1726]">{itinerary.destination}</h2>
-          <p className="mt-1 text-sm text-[#7c7067]">{itinerary.summary}</p>
+          <h2 className="mt-1 font-serif text-3xl font-bold text-[#5d1726] break-words min-w-0">{itinerary.destination}</h2>
+          <p className="mt-1 text-sm text-[#7c7067] break-words min-w-0">{itinerary.summary}</p>
           {itinerary.whyThisPlan && (
-            <p className="mt-3 rounded-2xl border border-[#ead39c] bg-[#fff8e5] p-3.5 text-xs leading-relaxed text-[#8c5d14]">
-              <Sparkles className="mr-1.5 inline size-3.5 text-[#b4771d]" aria-hidden="true" />
+            <p className="mt-3 rounded-2xl border border-[#ead39c] bg-[#fff8e5] p-3.5 text-xs leading-relaxed text-[#8c5d14] break-words min-w-0">
+              <Sparkles className="mr-1.5 inline size-3.5 text-[#b4771d] shrink-0" aria-hidden="true" />
               {itinerary.whyThisPlan}
             </p>
           )}
@@ -536,21 +553,21 @@ function ItineraryView({
       </div>
 
       {/* 1. Your Journey Timeline */}
-      {itinerary.journey && itinerary.journey.length > 0 && (
-        <section className="mb-6 rounded-3xl border border-[#e7d9c8] bg-[#fffdf9] p-5 shadow-[0_10px_30px_rgba(87,48,23,0.05)] sm:p-6">
+      {Array.isArray(itinerary.journey) && itinerary.journey.length > 0 && (
+        <section className="mb-6 rounded-3xl border border-[#e7d9c8] bg-[#fffdf9] p-5 shadow-[0_10px_30px_rgba(87,48,23,0.05)] sm:p-6 min-w-0">
           <div className="flex items-center gap-2.5 border-b border-[#eee3d6] pb-3">
-            <Route className="size-5 text-[#6f1d2b]" aria-hidden="true" />
+            <Route className="size-5 text-[#6f1d2b] shrink-0" aria-hidden="true" />
             <h3 className="font-serif text-xl font-bold text-[#5d1726]">{copy.yourJourneyTitle}</h3>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {itinerary.journey.map((step, idx) => (
-              <div key={idx} className="flex items-start gap-3 rounded-2xl border border-[#f0e7dc] bg-[#fffaf2] p-3.5">
+              <div key={idx} className="flex items-start gap-3 rounded-2xl border border-[#f0e7dc] bg-[#fffaf2] p-3.5 min-w-0">
                 <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#6f1d2b] text-xs font-bold text-[#f8d886]">
                   {idx + 1}
                 </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-wider text-[#9b6c18]">{step.when}</p>
-                  <p className="mt-0.5 text-sm font-semibold text-[#443b35]">{step.step}</p>
+                <div className="min-w-0 break-words">
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#9b6c18] break-words">{step.when}</p>
+                  <p className="mt-0.5 text-sm font-semibold text-[#443b35] break-words">{step.step}</p>
                 </div>
               </div>
             ))}
@@ -559,10 +576,10 @@ function ItineraryView({
       )}
 
       {/* 2. How to Reach */}
-      {itinerary.travelPlan?.options && itinerary.travelPlan.options.length > 0 && (
-        <section className="mb-6 rounded-3xl border border-[#e7d9c8] bg-[#fffdf9] p-5 shadow-[0_10px_30px_rgba(87,48,23,0.05)] sm:p-6">
+      {Array.isArray(itinerary.travelPlan?.options) && itinerary.travelPlan.options.length > 0 && (
+        <section className="mb-6 rounded-3xl border border-[#e7d9c8] bg-[#fffdf9] p-5 shadow-[0_10px_30px_rgba(87,48,23,0.05)] sm:p-6 min-w-0">
           <div className="flex items-center gap-2.5 border-b border-[#eee3d6] pb-3">
-            <Compass className="size-5 text-[#6f1d2b]" aria-hidden="true" />
+            <Compass className="size-5 text-[#6f1d2b] shrink-0" aria-hidden="true" />
             <h3 className="font-serif text-xl font-bold text-[#5d1726]">{copy.howToReachTitle}</h3>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -575,17 +592,17 @@ function ItineraryView({
               return (
                 <div
                   key={idx}
-                  className={`relative flex flex-col justify-between rounded-2xl border p-4 transition ${
+                  className={`relative flex flex-col justify-between rounded-2xl border p-4 transition min-w-0 ${
                     isRecommended
                       ? 'border-[#6f1d2b] bg-[#fffaf2] shadow-sm ring-1 ring-[#6f1d2b]/20'
                       : 'border-[#f0e7dc] bg-[#fffdf9]'
                   }`}
                 >
-                  <div>
+                  <div className="min-w-0">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-serif text-base font-bold text-[#5d1726]">{modeLabel}</span>
+                      <span className="font-serif text-base font-bold text-[#5d1726] break-words">{modeLabel}</span>
                       {isRecommended && (
-                        <span className="rounded-full bg-[#e5f0e5] px-2.5 py-0.5 text-[11px] font-bold text-[#3d6846]">
+                        <span className="rounded-full bg-[#e5f0e5] px-2.5 py-0.5 text-[11px] font-bold text-[#3d6846] shrink-0">
                           {copy.recommendedBadge}
                         </span>
                       )}
@@ -597,17 +614,17 @@ function ItineraryView({
                       <span className="text-xs text-[#8b8179]">{copy.perPersonSuffix}</span>
                     </div>
                     <p className="mt-1 text-xs text-[#766d65]">
-                      <Clock className="mr-1 inline size-3 text-[#9b6c18]" aria-hidden="true" />
+                      <Clock className="mr-1 inline size-3 text-[#9b6c18] shrink-0" aria-hidden="true" />
                       {opt.durationHours} {copy.hoursShort}
                     </p>
-                    {opt.note && <p className="mt-2 text-xs leading-relaxed text-[#8b8179]">{opt.note}</p>}
+                    {opt.note && <p className="mt-2 text-xs leading-relaxed text-[#8b8179] break-words min-w-0">{opt.note}</p>}
                   </div>
                 </div>
               )
             })}
           </div>
           {itinerary.travelPlan.reason && (
-            <div className="mt-4 rounded-xl bg-[#f7f1e8] p-3 text-xs leading-5 text-[#665b52]">
+            <div className="mt-4 rounded-xl bg-[#f7f1e8] p-3 text-xs leading-5 text-[#665b52] break-words min-w-0">
               <strong className="text-[#5d1726]">{copy.recommendedReason}:</strong>{' '}
               {itinerary.travelPlan.reason}
             </div>
@@ -617,20 +634,20 @@ function ItineraryView({
 
       {/* 3. Where to Stay */}
       {itinerary.stay && (
-        <section className="mb-6 rounded-3xl border border-[#e7d9c8] bg-[#fffdf9] p-5 shadow-[0_10px_30px_rgba(87,48,23,0.05)] sm:p-6">
+        <section className="mb-6 rounded-3xl border border-[#e7d9c8] bg-[#fffdf9] p-5 shadow-[0_10px_30px_rgba(87,48,23,0.05)] sm:p-6 min-w-0">
           <div className="flex items-center gap-2.5 border-b border-[#eee3d6] pb-3">
-            <Hotel className="size-5 text-[#6f1d2b]" aria-hidden="true" />
+            <Hotel className="size-5 text-[#6f1d2b] shrink-0" aria-hidden="true" />
             <h3 className="font-serif text-xl font-bold text-[#5d1726]">{copy.whereToStayTitle}</h3>
           </div>
-          <div className="mt-4 flex flex-wrap items-baseline justify-between gap-3">
-            <div>
-              <p className="font-serif text-lg font-bold text-[#443b35]">{itinerary.stay.type}</p>
-              <p className="mt-0.5 text-xs text-[#8b8179]">
-                <MapPin className="mr-1 inline size-3 text-[#9b6c18]" aria-hidden="true" />
+          <div className="mt-4 flex flex-wrap items-baseline justify-between gap-3 min-w-0">
+            <div className="min-w-0 break-words">
+              <p className="font-serif text-lg font-bold text-[#443b35] break-words min-w-0">{itinerary.stay.type}</p>
+              <p className="mt-0.5 text-xs text-[#8b8179] break-words min-w-0">
+                <MapPin className="mr-1 inline size-3 text-[#9b6c18] shrink-0" aria-hidden="true" />
                 {itinerary.stay.area}
               </p>
             </div>
-            <div className="text-right">
+            <div className="text-right shrink-0">
               <p className="text-lg font-bold text-[#6f1d2b]">
                 ₹{formatINR(itinerary.stay.costPerRoomPerNight)}{' '}
                 <span className="text-xs font-normal text-[#8b8179]">{copy.perRoomPerNight}</span>
@@ -645,20 +662,20 @@ function ItineraryView({
 
       {/* 4. Getting Around */}
       {itinerary.localTransport && (
-        <section className="mb-6 rounded-3xl border border-[#e7d9c8] bg-[#fffdf9] p-5 shadow-[0_10px_30px_rgba(87,48,23,0.05)] sm:p-6">
+        <section className="mb-6 rounded-3xl border border-[#e7d9c8] bg-[#fffdf9] p-5 shadow-[0_10px_30px_rgba(87,48,23,0.05)] sm:p-6 min-w-0">
           <div className="flex items-center gap-2.5 border-b border-[#eee3d6] pb-3">
-            <Footprints className="size-5 text-[#6f1d2b]" aria-hidden="true" />
+            <Footprints className="size-5 text-[#6f1d2b] shrink-0" aria-hidden="true" />
             <h3 className="font-serif text-xl font-bold text-[#5d1726]">{copy.gettingAroundTitle}</h3>
           </div>
-          <div className="mt-4 flex flex-wrap items-baseline justify-between gap-3">
-            <p className="font-serif text-lg font-bold text-[#443b35]">{itinerary.localTransport.mode}</p>
-            <p className="text-lg font-bold text-[#6f1d2b]">
+          <div className="mt-4 flex flex-wrap items-baseline justify-between gap-3 min-w-0">
+            <p className="font-serif text-lg font-bold text-[#443b35] break-words min-w-0">{itinerary.localTransport.mode}</p>
+            <p className="text-lg font-bold text-[#6f1d2b] shrink-0">
               ₹{formatINR(itinerary.localTransport.costPerDay)}{' '}
               <span className="text-xs font-normal text-[#8b8179]">{copy.perDay}</span>
             </p>
           </div>
           {itinerary.localTransport.tip && (
-            <div className="mt-3 rounded-xl bg-[#f7f1e8] p-3 text-xs leading-5 text-[#665b52]">
+            <div className="mt-3 rounded-xl bg-[#f7f1e8] p-3 text-xs leading-5 text-[#665b52] break-words min-w-0">
               <strong className="text-[#5d1726]">{copy.transitTip}:</strong> {itinerary.localTransport.tip}
             </div>
           )}
@@ -666,15 +683,15 @@ function ItineraryView({
       )}
 
       {/* 5. Food Plan */}
-      {itinerary.foodPlan && itinerary.foodPlan.length > 0 && (
-        <section className="mb-6 rounded-3xl border border-[#e7d9c8] bg-[#fffdf9] p-5 shadow-[0_10px_30px_rgba(87,48,23,0.05)] sm:p-6">
+      {Array.isArray(itinerary.foodPlan) && itinerary.foodPlan.length > 0 && (
+        <section className="mb-6 rounded-3xl border border-[#e7d9c8] bg-[#fffdf9] p-5 shadow-[0_10px_30px_rgba(87,48,23,0.05)] sm:p-6 min-w-0">
           <div className="flex items-center gap-2.5 border-b border-[#eee3d6] pb-3">
-            <Utensils className="size-5 text-[#6f1d2b]" aria-hidden="true" />
+            <Utensils className="size-5 text-[#6f1d2b] shrink-0" aria-hidden="true" />
             <h3 className="font-serif text-xl font-bold text-[#5d1726]">{copy.foodPlanTitle}</h3>
           </div>
           <div className="mt-4 grid gap-3">
             {itinerary.foodPlan.map((fp) => (
-              <div key={fp.day} className="rounded-2xl border border-[#f0e7dc] bg-[#fffaf2] p-4 text-xs">
+              <div key={fp.day} className="rounded-2xl border border-[#f0e7dc] bg-[#fffaf2] p-4 text-xs min-w-0">
                 <div className="flex items-center justify-between border-b border-[#f0e7dc] pb-2 font-bold text-[#5d1726]">
                   <span>
                     {copy.dayWord} {fp.day}
@@ -684,17 +701,17 @@ function ItineraryView({
                   </span>
                 </div>
                 <div className="mt-2.5 grid gap-2 sm:grid-cols-3">
-                  <div>
+                  <div className="min-w-0 break-words">
                     <span className="font-semibold text-[#8b5e13]">{copy.breakfast}:</span>{' '}
-                    <span className="text-[#443b35]">{fp.breakfast}</span>
+                    <span className="text-[#443b35] break-words">{fp.breakfast}</span>
                   </div>
-                  <div>
+                  <div className="min-w-0 break-words">
                     <span className="font-semibold text-[#8b5e13]">{copy.lunch}:</span>{' '}
-                    <span className="text-[#443b35]">{fp.lunch}</span>
+                    <span className="text-[#443b35] break-words">{fp.lunch}</span>
                   </div>
-                  <div>
+                  <div className="min-w-0 break-words">
                     <span className="font-semibold text-[#8b5e13]">{copy.dinner}:</span>{' '}
-                    <span className="text-[#443b35]">{fp.dinner}</span>
+                    <span className="text-[#443b35] break-words">{fp.dinner}</span>
                   </div>
                 </div>
               </div>
@@ -704,56 +721,64 @@ function ItineraryView({
       )}
 
       {/* C. Day Cards */}
-      <div className="grid gap-5">
-        {itinerary.days.map((day) => (
-          <article
-            key={day.day}
-            className="overflow-hidden rounded-3xl border border-[#e7d9c8] bg-[#fffdf9] shadow-[0_10px_30px_rgba(87,48,23,0.05)]"
-          >
-            <div className="flex items-start gap-4 border-b border-[#eee3d6] bg-[#fffaf2] p-5 sm:p-6">
-              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#6f1d2b] font-serif text-lg font-bold text-[#f8d886]">
-                {day.day}
+      {Array.isArray(itinerary.days) && itinerary.days.length > 0 && (
+        <div className="grid gap-5">
+          {itinerary.days.map((day) => (
+            <article
+              key={day.day}
+              className="overflow-hidden rounded-3xl border border-[#e7d9c8] bg-[#fffdf9] shadow-[0_10px_30px_rgba(87,48,23,0.05)] min-w-0"
+            >
+              <div className="flex items-start gap-4 border-b border-[#eee3d6] bg-[#fffaf2] p-5 sm:p-6 min-w-0">
+                <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#6f1d2b] font-serif text-lg font-bold text-[#f8d886]">
+                  {day.day}
+                </div>
+                <div className="min-w-0 break-words">
+                  <h3 className="font-serif text-xl font-bold text-[#5d1726] break-words min-w-0">{day.title}</h3>
+                  <p className="text-sm text-[#8b8179] break-words min-w-0">{day.subtitle}</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-serif text-xl font-bold text-[#5d1726]">{day.title}</h3>
-                <p className="text-sm text-[#8b8179]">{day.subtitle}</p>
-              </div>
-            </div>
 
-            <div className="p-5 sm:p-6">
-              <div className="grid gap-4">
-                {day.stops.map((stop, sIdx) => (
-                  <div
-                    key={`${stop.place}-${sIdx}`}
-                    className="grid grid-cols-[1fr_auto] gap-3 border-b border-[#f0e7dc] pb-4 last:border-0 last:pb-0"
-                  >
-                    <div>
-                      <p className="font-bold text-[#443b35]">{stop.place}</p>
-                      <p className="mt-0.5 text-xs text-[#8b8179]">{stop.time}</p>
-                      <p className="mt-1 text-xs leading-5 text-[#766d65]">{stop.description}</p>
-                    </div>
-                    <p className="font-semibold text-[#3d6846]">₹{formatINR(stop.cost)}</p>
+              <div className="p-5 sm:p-6 min-w-0">
+                {Array.isArray(day.stops) && day.stops.length > 0 && (
+                  <div className="grid gap-4">
+                    {day.stops.map((stop, sIdx) => (
+                      <div
+                        key={`${stop.place}-${sIdx}`}
+                        className="grid grid-cols-[1fr_auto] gap-3 border-b border-[#f0e7dc] pb-4 last:border-0 last:pb-0 min-w-0"
+                      >
+                        <div className="min-w-0 break-words">
+                          <p className="font-bold text-[#443b35] break-words min-w-0">{stop.place}</p>
+                          <p className="mt-0.5 text-xs text-[#8b8179] break-words min-w-0">{stop.time}</p>
+                          <p className="mt-1 text-xs leading-5 text-[#766d65] break-words min-w-0">{stop.description}</p>
+                        </div>
+                        <p className="font-semibold text-[#3d6846] shrink-0">₹{formatINR(stop.cost)}</p>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
 
-              <div className="mt-5 flex gap-2 rounded-xl bg-[#f7f1e8] p-3 text-sm leading-5 text-[#665b52]">
-                <Utensils className="mt-0.5 size-4 shrink-0 text-[#b4771d]" aria-hidden="true" />
-                <span>
-                  <strong className="text-[#5d1726]">{copy.localFoodTip}</strong> {day.foodTip}
-                </span>
-              </div>
+                {day.foodTip && (
+                  <div className="mt-5 flex gap-2 rounded-xl bg-[#f7f1e8] p-3 text-sm leading-5 text-[#665b52] break-words min-w-0">
+                    <Utensils className="mt-0.5 size-4 shrink-0 text-[#b4771d]" aria-hidden="true" />
+                    <span className="break-words min-w-0">
+                      <strong className="text-[#5d1726]">{copy.localFoodTip}</strong> {day.foodTip}
+                    </span>
+                  </div>
+                )}
 
-              <div className="mt-4 rounded-xl border border-[#ead39c] bg-[#fff8e5] p-4">
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#9b6c18]">{copy.kannadaPhrase}</p>
-                <p className="mt-2 font-serif text-xl font-bold text-[#5d1726]">{day.phrase.kannada}</p>
-                <p className="mt-1 text-sm italic text-[#8b8179]">{day.phrase.transliteration}</p>
-                <p className="mt-2 text-sm text-[#665b52]">{day.phrase.meaning}</p>
+                {day.phrase && (
+                  <div className="mt-4 rounded-xl border border-[#ead39c] bg-[#fff8e5] p-4 break-words min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#9b6c18]">{copy.kannadaPhrase}</p>
+                    <p className="mt-2 font-serif text-xl font-bold text-[#5d1726] break-words">{day.phrase.kannada}</p>
+                    <p className="mt-1 text-sm italic text-[#8b8179] break-words">{day.phrase.transliteration}</p>
+                    <p className="mt-2 text-sm text-[#665b52] break-words">{day.phrase.meaning}</p>
+                  </div>
+                )}
               </div>
-            </div>
-          </article>
-        ))}
-      </div>
+            </article>
+          ))}
+        </div>
+      )}
 
       {/* D. Over-budget alert ABOVE breakdown card */}
       {itinerary.overBudget && typeof itinerary.budgetShortfall === 'number' && itinerary.budgetShortfall > 0 ? (

@@ -5,7 +5,39 @@ import phrases from '@/data/phrases.json'
 import type { Itinerary } from '@/lib/generateItinerary'
 import { CLUSTERS, type Cluster } from '@/lib/clusters'
 
+export const runtime = 'nodejs'
 export const maxDuration = 60
+
+// Best-effort in-memory rate limiter on serverless (state is local to the instance)
+interface RateLimitRecord {
+  count: number
+  resetTime: number
+}
+const rateLimitMap = new Map<string, RateLimitRecord>()
+
+function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
+  const now = Date.now()
+  const windowMs = 60 * 1000 // 1 minute
+  const maxRequests = 20
+
+  const record = rateLimitMap.get(ip)
+  if (!record || now >= record.resetTime) {
+    rateLimitMap.set(ip, { count: 1, resetTime: now + windowMs })
+    return { allowed: true }
+  }
+
+  record.count++
+  if (record.count > maxRequests) {
+    const retryAfter = Math.max(1, Math.ceil((record.resetTime - now) / 1000))
+    return { allowed: false, retryAfter }
+  }
+
+  return { allowed: true }
+}
+
+const STARTING_CITY_REGEX = /^[\p{L}\p{M} .'-]{2,40}$/u
+const VALID_INTERESTS = new Set(['heritage', 'nature', 'wildlife', 'beaches', 'food', 'adventure', 'spiritual'])
+const VALID_EXPERIENCES = new Set(['relaxed', 'adventure', 'cultural', 'family', 'solo budget'])
 
 interface PhraseItem {
   id: string
@@ -48,9 +80,17 @@ function sanitizeMessage(msg: string, apiKey?: string): string {
   return cleaned
 }
 
-function cleanTransportText(text: string): string {
-  if (!text) return text
-  return text
+function cleanDanglingPunctuation(str: string): string {
+  return str
+    .replace(/^[,;:\-–—\s]+/, '')
+    .replace(/[,;:\-–—\s]+$/, '')
+    .trim()
+}
+
+function cleanTransportText(text: string, language?: string): string {
+  if (!text || (language && language !== 'en')) return text
+  const original = text
+  const cleaned = text
     // Specific airlines
     .replace(/\b(?:IndiGo|Air\s*India|SpiceJet|Akasa(?:\s+Air)?|Vistara|AIX(?:\s+Connect)?|GoAir|Go\s*First)\b/gi, 'flight')
     // Specific bus operators
@@ -61,28 +101,40 @@ function cleanTransportText(text: string): string {
     .replace(/\b(?:train\s*(?:no\.?|number)?\s*#?\d{4,5})\b/gi, 'train')
     // Flight numbers
     .replace(/\b(?:flight\s*(?:no\.?|number)?\s*#?[A-Z0-9]{2}\s*\d{3,4})\b/gi, 'flight')
+    .replace(/\s{2,}/g, ' ')
+  const trimmed = cleanDanglingPunctuation(cleaned)
+  if (!trimmed || trimmed.length < 10) return original
+  return trimmed
 }
 
-function cleanPercentages(text: string): string {
-  if (!text) return text
-  return text
+function cleanPercentages(text: string, language?: string): string {
+  if (!text || (language && language !== 'en')) return text
+  const original = text
+  const cleaned = text
     .replace(/\b\d+(\.\d+)?%\b/g, '')
     .replace(/\s{2,}/g, ' ')
-    .trim()
+  const trimmed = cleanDanglingPunctuation(cleaned)
+  if (!trimmed || trimmed.length < 10) return original
+  return trimmed
 }
 
-function cleanEateryText(text: string): string {
-  if (!text) return text
-  return text
+function cleanEateryText(text: string, language?: string): string {
+  if (!text || (language && language !== 'en')) return text
+  const original = text
+  const cleaned = text
     .replace(/\b(?:Hotel\s+)?Mylari(?:\s+(?:Hotel|Restaurant|Mess))?\s*/gi, '')
     .replace(/\b(?:Vidyarthi\s+Bhavan|CTR|MTR|Janatha\s+Hotel|Brahmins(?:\s+Coffee\s+Bar)?|Veena\s+Stores)\s*/gi, '')
     .replace(/\bat\s+[A-Za-z0-9'\s]+?(?:Restaurant|Hotel|Cafe|Mess|Bhavan|Darshini|Eatery|Outlet)\b/gi, '')
     .replace(/\b(?:Restaurant|Mess|Darshini|Eatery)\b/gi, '')
-    .trim()
+    .replace(/\s{2,}/g, ' ')
+  const trimmed = cleanDanglingPunctuation(cleaned)
+  if (!trimmed || trimmed.length < 10) return original
+  return trimmed
 }
 
-function cleanBudgetText(text: string): string {
-  if (!text) return text
+function cleanBudgetText(text: string, language?: string): string {
+  if (!text || (language && language !== 'en')) return text
+  const original = text
   let cleaned = text
     // Remove whole sentences that discuss budget fit, staying within, or exceeding budget
     .replace(/(?:^|\.\s+|\n\s*)[A-Z\u0900-\u0D7F][^.!?\n]*\b(?:fits?|fitting|stays?|staying|exceeds?|exceeding|within|allocated)\b[^.!?\n]*\bbudget\b[^.!?\n]*([.!?]|\s*$)/gi, '$1')
@@ -101,8 +153,9 @@ function cleanBudgetText(text: string): string {
     .replace(/\s+([.,;:!?])/g, '$1')
     .replace(/,\s*,/g, ',')
     .replace(/\(\s*\)/g, '')
-    .trim()
-  return cleaned
+  const trimmed = cleanDanglingPunctuation(cleaned)
+  if (!trimmed || trimmed.length < 10) return original
+  return trimmed
 }
 
 function normalizeCityName(city: string): string {
@@ -118,13 +171,56 @@ function normalizeCityName(city: string): string {
     .join(' ')
 }
 
-function removeStartingCityAsViaPoint(text: string, startingCity: string): string {
-  if (!text || !startingCity) return text
+function removeStartingCityAsViaPoint(text: string, startingCity: string, language?: string): string {
+  if (!text || !startingCity || (language && language !== 'en')) return text
+  const original = text
   const escaped = startingCity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return text
+  const cleaned = text
     .replace(new RegExp(`\\bvia\\s+${escaped}\\b`, 'gi'), '')
     .replace(/\s{2,}/g, ' ')
-    .trim()
+  const trimmed = cleanDanglingPunctuation(cleaned)
+  if (!trimmed || trimmed.length < 10) return original
+  return trimmed
+}
+
+function sanitizeResponseStrings<T>(val: T): T {
+  if (typeof val === 'string') {
+    let s = val
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/```/g, '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (s.length > 400) {
+      s = s.slice(0, 400).trim()
+    }
+    return s as unknown as T
+  }
+  if (Array.isArray(val)) {
+    return val.map((item) => sanitizeResponseStrings(item)) as unknown as T
+  }
+  if (val !== null && typeof val === 'object') {
+    const result: Record<string, any> = {}
+    for (const key of Object.keys(val)) {
+      result[key] = sanitizeResponseStrings((val as Record<string, any>)[key])
+    }
+    return result as T
+  }
+  return val
+}
+
+function assertAllNumbersFiniteAndNonNegative(obj: any): void {
+  if (typeof obj === 'number') {
+    if (!Number.isFinite(obj) || obj < 0) {
+      throw new Error(`Sanity check failed: number ${obj} is not finite or negative`)
+    }
+  } else if (Array.isArray(obj)) {
+    for (const item of obj) assertAllNumbersFiniteAndNonNegative(item)
+  } else if (obj !== null && typeof obj === 'object') {
+    for (const key of Object.keys(obj)) {
+      assertAllNumbersFiniteAndNonNegative(obj[key])
+    }
+  }
 }
 
 function normalizeModelName(raw: string): string {
@@ -417,11 +513,14 @@ async function callGemini(
       cleanedText = cleanedText.replace(/^```\s*/, '').replace(/```\s*$/, '').trim()
     }
 
-    const parsed = JSON.parse(cleanedText) as Itinerary
+    const rawParsed = JSON.parse(cleanedText) as Itinerary
 
-    if (!parsed || typeof parsed !== 'object') {
+    if (!rawParsed || typeof rawParsed !== 'object') {
       throw new Error('Validation failed: parsed response is not an object')
     }
+
+    const parsed = sanitizeResponseStrings(rawParsed)
+
     if (fixedClusterName) {
       parsed.destination = fixedClusterName
     } else if (typeof parsed.destination !== 'string' || !parsed.destination.trim()) {
@@ -434,9 +533,9 @@ async function callGemini(
       throw new Error('Validation failed: missing or invalid whyThisPlan field')
     }
     const escapedCity = startingCity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    parsed.whyThisPlan = cleanBudgetText(parsed.whyThisPlan)
+    parsed.whyThisPlan = cleanBudgetText(parsed.whyThisPlan, language)
       .replace(new RegExp(`\\b${escapedCity}\\b`, 'gi'), startingCity)
-    parsed.summary = cleanBudgetText(typeof parsed.summary === 'string' ? parsed.summary : '')
+    parsed.summary = cleanBudgetText(typeof parsed.summary === 'string' ? parsed.summary : '', language)
       .replace(new RegExp(`\\b${escapedCity}\\b`, 'gi'), startingCity)
 
     // Validate days array
@@ -465,8 +564,8 @@ async function callGemini(
         }
         s.place = typeof s.place === 'string' ? s.place : 'Attraction'
         s.time = typeof s.time === 'string' ? s.time : 'Flexible'
-        if (typeof s.cost !== 'number' || isNaN(s.cost) || s.cost < 0) {
-          throw new Error(`Validation failed: stop cost in day ${d.day} must be a finite number >= 0`)
+        if (typeof s.cost !== 'number' || !Number.isFinite(s.cost) || s.cost < 0 || s.cost > 100000) {
+          throw new Error(`Sanity check failed: stop cost in day ${d.day} must be a finite number between 0 and 100000`)
         }
 
         // Server defense: for each day, if two stops match attractions of the same ticketGroup by exact case-insensitive name, set the later stop's cost to 0
@@ -480,7 +579,7 @@ async function callGemini(
           }
         }
 
-        s.description = cleanBudgetText(cleanTransportText(typeof s.description === 'string' ? s.description : ''))
+        s.description = cleanBudgetText(cleanTransportText(typeof s.description === 'string' ? s.description : '', language), language)
         calculatedStopsTotal += s.cost
       }
     }
@@ -495,19 +594,24 @@ async function callGemini(
     if (!Array.isArray(parsed.travelPlan.options) || parsed.travelPlan.options.length < 2) {
       throw new Error('Validation failed: travelPlan.options must have at least 2 items')
     }
+    const validModes = new Set(['train', 'bus', 'flight', 'car'])
     for (const opt of parsed.travelPlan.options) {
       if (!opt || typeof opt !== 'object') {
         throw new Error('Validation failed: invalid travel option')
       }
-      if (typeof opt.durationHours !== 'number' || isNaN(opt.durationHours) || opt.durationHours < 0) {
-        throw new Error('Validation failed: travel durationHours must be a finite number >= 0')
+      const modeClean = typeof opt.mode === 'string' ? opt.mode.toLowerCase().trim() : ''
+      if (!validModes.has(modeClean)) {
+        throw new Error(`Sanity check failed: travel mode "${opt.mode}" must be one of train, bus, flight, car`)
       }
-      if (typeof opt.costPerPersonOneWay !== 'number' || isNaN(opt.costPerPersonOneWay) || opt.costPerPersonOneWay < 0) {
-        throw new Error('Validation failed: travel costPerPersonOneWay must be a finite number >= 0')
+      opt.mode = modeClean
+      if (typeof opt.durationHours !== 'number' || !Number.isFinite(opt.durationHours) || opt.durationHours < 0.5 || opt.durationHours > 72) {
+        throw new Error(`Sanity check failed: travel durationHours (${opt.durationHours}) must be between 0.5 and 72`)
       }
-      opt.mode = typeof opt.mode === 'string' ? opt.mode.toLowerCase().trim() : 'bus'
-      let optNote = cleanBudgetText(cleanTransportText(typeof opt.note === 'string' ? opt.note : ''))
-      optNote = removeStartingCityAsViaPoint(optNote, startingCity)
+      if (typeof opt.costPerPersonOneWay !== 'number' || !Number.isFinite(opt.costPerPersonOneWay) || opt.costPerPersonOneWay < 0 || opt.costPerPersonOneWay > 60000) {
+        throw new Error(`Sanity check failed: travel costPerPersonOneWay (${opt.costPerPersonOneWay}) must be between 0 and 60000`)
+      }
+      let optNote = cleanBudgetText(cleanTransportText(typeof opt.note === 'string' ? opt.note : '', language), language)
+      optNote = removeStartingCityAsViaPoint(optNote, startingCity, language)
       optNote = optNote.replace(new RegExp(`\\b${escapedCity}\\b`, 'gi'), startingCity)
       opt.note = optNote
     }
@@ -516,8 +620,10 @@ async function callGemini(
       : parsed.travelPlan.options[0].mode
     parsed.travelPlan.reason = cleanBudgetText(
       cleanPercentages(
-        cleanTransportText(typeof parsed.travelPlan.reason === 'string' ? parsed.travelPlan.reason : '')
-      )
+        cleanTransportText(typeof parsed.travelPlan.reason === 'string' ? parsed.travelPlan.reason : '', language),
+        language
+      ),
+      language
     ).replace(new RegExp(`\\b${escapedCity}\\b`, 'gi'), startingCity)
 
     // Validate journey
@@ -528,8 +634,8 @@ async function callGemini(
       if (!j || typeof j !== 'object' || typeof j.step !== 'string' || typeof j.when !== 'string') {
         throw new Error('Validation failed: invalid journey step entry')
       }
-      let stepText = cleanTransportText(j.step)
-      stepText = removeStartingCityAsViaPoint(stepText, startingCity)
+      let stepText = cleanTransportText(j.step, language)
+      stepText = removeStartingCityAsViaPoint(stepText, startingCity, language)
       stepText = stepText.replace(new RegExp(`\\b${escapedCity}\\b`, 'gi'), startingCity)
       j.step = stepText
     }
@@ -538,8 +644,8 @@ async function callGemini(
     if (!parsed.stay || typeof parsed.stay !== 'object') {
       throw new Error('Validation failed: missing stay object')
     }
-    if (typeof parsed.stay.costPerRoomPerNight !== 'number' || isNaN(parsed.stay.costPerRoomPerNight) || parsed.stay.costPerRoomPerNight < 0) {
-      throw new Error('Validation failed: stay.costPerRoomPerNight must be a finite number >= 0')
+    if (typeof parsed.stay.costPerRoomPerNight !== 'number' || !Number.isFinite(parsed.stay.costPerRoomPerNight) || parsed.stay.costPerRoomPerNight < 200 || parsed.stay.costPerRoomPerNight > 60000) {
+      throw new Error(`Sanity check failed: stay.costPerRoomPerNight (${parsed.stay.costPerRoomPerNight}) must be between 200 and 60000`)
     }
     parsed.stay.type = typeof parsed.stay.type === 'string' ? parsed.stay.type : 'Hotel'
     parsed.stay.area = typeof parsed.stay.area === 'string' ? parsed.stay.area : ''
@@ -548,12 +654,13 @@ async function callGemini(
     if (!parsed.localTransport || typeof parsed.localTransport !== 'object') {
       throw new Error('Validation failed: missing localTransport object')
     }
-    if (typeof parsed.localTransport.costPerDay !== 'number' || isNaN(parsed.localTransport.costPerDay) || parsed.localTransport.costPerDay < 0) {
-      throw new Error('Validation failed: localTransport.costPerDay must be a finite number >= 0')
+    if (typeof parsed.localTransport.costPerDay !== 'number' || !Number.isFinite(parsed.localTransport.costPerDay) || parsed.localTransport.costPerDay < 0 || parsed.localTransport.costPerDay > 20000) {
+      throw new Error(`Sanity check failed: localTransport.costPerDay (${parsed.localTransport.costPerDay}) must be between 0 and 20000`)
     }
     parsed.localTransport.mode = typeof parsed.localTransport.mode === 'string' ? parsed.localTransport.mode : 'Auto-rickshaw / Taxi'
     parsed.localTransport.tip = cleanBudgetText(
-      cleanTransportText(typeof parsed.localTransport.tip === 'string' ? parsed.localTransport.tip : '')
+      cleanTransportText(typeof parsed.localTransport.tip === 'string' ? parsed.localTransport.tip : '', language),
+      language
     )
 
     // Validate foodPlan
@@ -567,11 +674,11 @@ async function callGemini(
         throw new Error(`Validation failed: invalid foodPlan entry at index ${i}`)
       }
       fp.day = typeof fp.day === 'number' ? fp.day : i + 1
-      fp.breakfast = cleanEateryText(typeof fp.breakfast === 'string' ? fp.breakfast : '')
-      fp.lunch = cleanEateryText(typeof fp.lunch === 'string' ? fp.lunch : '')
-      fp.dinner = cleanEateryText(typeof fp.dinner === 'string' ? fp.dinner : '')
-      if (typeof fp.estimatedCostPerPerson !== 'number' || isNaN(fp.estimatedCostPerPerson) || fp.estimatedCostPerPerson < 0) {
-        throw new Error(`Validation failed: foodPlan estimatedCostPerPerson in day ${fp.day} must be a finite number >= 0`)
+      fp.breakfast = cleanEateryText(typeof fp.breakfast === 'string' ? fp.breakfast : '', language)
+      fp.lunch = cleanEateryText(typeof fp.lunch === 'string' ? fp.lunch : '', language)
+      fp.dinner = cleanEateryText(typeof fp.dinner === 'string' ? fp.dinner : '', language)
+      if (typeof fp.estimatedCostPerPerson !== 'number' || !Number.isFinite(fp.estimatedCostPerPerson) || fp.estimatedCostPerPerson < 50 || fp.estimatedCostPerPerson > 6000) {
+        throw new Error(`Sanity check failed: foodPlan estimatedCostPerPerson (${fp.estimatedCostPerPerson}) in day ${fp.day} must be between 50 and 6000`)
       }
       sumFoodPerPerson += fp.estimatedCostPerPerson
     }
@@ -580,7 +687,7 @@ async function callGemini(
     const seenFoodTips = new Set<string>()
     for (let i = 0; i < parsed.days.length; i++) {
       const d = parsed.days[i]
-      let tip = cleanBudgetText(cleanEateryText(typeof d.foodTip === 'string' ? d.foodTip : ''))
+      let tip = cleanBudgetText(cleanEateryText(typeof d.foodTip === 'string' ? d.foodTip : '', language), language)
       const tipKey = tip.toLowerCase().trim()
       const fp = parsed.foodPlan[i]
       const dayDishes = [fp?.breakfast, fp?.lunch, fp?.dinner].filter(Boolean) as string[]
@@ -646,6 +753,20 @@ async function callGemini(
     delete parsed.budgetWarning
     ;(parsed as any).startingCity = startingCity
 
+    // Verify all numbers in the response are finite and non-negative
+    assertAllNumbersFiniteAndNonNegative(parsed)
+
+    if (total > budget) {
+      parsed.overBudget = true
+      parsed.budgetShortfall = total - budget
+    } else {
+      parsed.overBudget = false
+      delete parsed.budgetShortfall
+    }
+
+    delete parsed.budgetWarning
+    ;(parsed as any).startingCity = startingCity
+
     return { success: true, data: parsed, rawText }
   } catch (err: any) {
     clearTimeout(timer)
@@ -682,6 +803,23 @@ async function callGemini(
 }
 
 export async function POST(req: NextRequest) {
+  // Best-effort in-memory rate limiting: max 20 requests per minute per IP.
+  // In serverless environments, state is isolated per instance.
+  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown'
+  const rateLimit = checkRateLimit(clientIp)
+  if (!rateLimit.allowed) {
+    return new NextResponse(
+      JSON.stringify({ error: 'Too many requests. Please try again after a minute.' }),
+      {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'Retry-After': String(rateLimit.retryAfter || 60),
+        },
+      }
+    )
+  }
+
   let body: unknown
   try {
     body = await req.json()
@@ -728,26 +866,44 @@ export async function POST(req: NextRequest) {
     fixedCluster = matched
   }
 
-  if (typeof startingCity !== 'string' || !startingCity.trim()) {
-    console.error('[Itinerary API Error] Status: 400 | Error: Invalid startingCity: Must be a non-empty string.')
+  if (typeof startingCity !== 'string' || !STARTING_CITY_REGEX.test(startingCity.trim())) {
+    console.error(`[Itinerary API Error] Status: 400 | Error: Invalid startingCity: ${String(startingCity)}`)
     return NextResponse.json(
-      { error: 'Invalid startingCity: Must be a non-empty string.' },
+      { error: 'Invalid startingCity: Must be 2 to 40 letters, spaces, hyphens, dots, or apostrophes.' },
       { status: 400 }
     )
   }
 
   const normalizedStartingCity = normalizeCityName(startingCity)
 
-  if (typeof travellers !== 'number' || !Number.isInteger(travellers) || travellers < 1 || travellers > 10) {
-    console.error(`[Itinerary API Error] Status: 400 | Error: Invalid travellers value (${String(travellers)}). Must be an integer between 1 and 10.`)
+  if (!Array.isArray(interests) || interests.length === 0) {
+    console.error('[Itinerary API Error] Status: 400 | Error: Invalid interests: Must be a non-empty array.')
     return NextResponse.json(
-      { error: 'Invalid travellers: Must be an integer between 1 and 10.' },
+      { error: 'Invalid interests: Must be a non-empty array.' },
       { status: 400 }
     )
   }
 
-  if (groupType !== 'solo' && groupType !== 'couple' && groupType !== 'family' && groupType !== 'friends') {
-    console.error(`[Itinerary API Error] Status: 400 | Error: Invalid groupType value (${String(groupType)}). Must be one of "solo", "couple", "family", or "friends".`)
+  for (const item of interests) {
+    if (typeof item !== 'string' || !VALID_INTERESTS.has(item.trim().toLowerCase())) {
+      console.error(`[Itinerary API Error] Status: 400 | Error: Invalid interest: "${String(item)}".`)
+      return NextResponse.json(
+        { error: `Invalid interest: "${String(item)}".` },
+        { status: 400 }
+      )
+    }
+  }
+
+  if (typeof experience !== 'string' || !VALID_EXPERIENCES.has(experience.trim().toLowerCase())) {
+    console.error(`[Itinerary API Error] Status: 400 | Error: Invalid experience: "${String(experience)}".`)
+    return NextResponse.json(
+      { error: 'Invalid experience style.' },
+      { status: 400 }
+    )
+  }
+
+  if (typeof groupType !== 'string' || !['solo', 'couple', 'family', 'friends'].includes(groupType.trim().toLowerCase())) {
+    console.error(`[Itinerary API Error] Status: 400 | Error: Invalid groupType value (${String(groupType)}).`)
     return NextResponse.json(
       { error: 'Invalid groupType: Must be one of "solo", "couple", "family", or "friends".' },
       { status: 400 }
@@ -762,10 +918,18 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  if (typeof budget !== 'number' || isNaN(budget) || budget <= 0) {
-    console.error(`[Itinerary API Error] Status: 400 | Error: Invalid budget value (${String(budget)}). Must be a number greater than 0.`)
+  if (typeof travellers !== 'number' || !Number.isInteger(travellers) || travellers < 1 || travellers > 10) {
+    console.error(`[Itinerary API Error] Status: 400 | Error: Invalid travellers value (${String(travellers)}). Must be an integer between 1 and 10.`)
     return NextResponse.json(
-      { error: 'Invalid budget: Must be a number greater than 0.' },
+      { error: 'Invalid travellers: Must be an integer between 1 and 10.' },
+      { status: 400 }
+    )
+  }
+
+  if (typeof budget !== 'number' || !Number.isFinite(budget) || budget <= 0 || budget > 10000000) {
+    console.error(`[Itinerary API Error] Status: 400 | Error: Invalid budget value (${String(budget)}). Must be a number between 1 and 10,000,000.`)
+    return NextResponse.json(
+      { error: 'Invalid budget: Must be a number between 1 and 10,000,000.' },
       { status: 400 }
     )
   }
@@ -782,7 +946,7 @@ export async function POST(req: NextRequest) {
   if (!apiKey) {
     console.error('[Itinerary API Error] Status: 503 | Error: GEMINI_API_KEY is not configured in process.env.')
     return NextResponse.json(
-      { error: 'Gemini API key is not configured.' },
+      { error: 'Service temporarily unavailable.' },
       { status: 503 }
     )
   }

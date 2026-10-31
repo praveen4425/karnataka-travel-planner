@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import destinations from '@/data/destinations.json'
 import { buildCards } from '@/lib/clusters'
 
+export const runtime = 'nodejs'
+
+const VALID_INTERESTS = new Set(['heritage', 'nature', 'wildlife', 'beaches', 'food', 'adventure', 'spiritual'])
+const VALID_EXPERIENCES = new Set(['relaxed', 'adventure', 'cultural', 'family', 'solo budget'])
+
 export async function POST(req: NextRequest) {
   try {
     let body: unknown
@@ -29,6 +34,24 @@ export async function POST(req: NextRequest) {
         { error: 'Invalid interests: Must be an array.' },
         { status: 400 }
       )
+    }
+
+    for (const item of interests) {
+      if (typeof item !== 'string' || !VALID_INTERESTS.has(item.trim().toLowerCase())) {
+        return NextResponse.json(
+          { error: `Invalid interest: "${String(item)}".` },
+          { status: 400 }
+        )
+      }
+    }
+
+    if (experience !== undefined && experience !== null && experience !== '') {
+      if (typeof experience !== 'string' || !VALID_EXPERIENCES.has(experience.trim().toLowerCase())) {
+        return NextResponse.json(
+          { error: 'Invalid experience type.' },
+          { status: 400 }
+        )
+      }
     }
 
     const expStr = typeof experience === 'string' ? experience : ''

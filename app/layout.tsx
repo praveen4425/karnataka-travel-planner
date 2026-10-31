@@ -4,8 +4,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Karnataka Travel Planner',
-  description: 'Plan a thoughtful, AI-inspired trip across Karnataka, India.',
-  generator: 'v0.app',
+  description: 'Plan your trip across Karnataka with custom travel, stay, and food itineraries.',
   icons: {
     icon: [
       {
